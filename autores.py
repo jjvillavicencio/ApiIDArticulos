@@ -11,7 +11,6 @@ import os.path as path
 from bs4 import BeautifulSoup
 import requests
 import MySQLdb
-from difflib import SequenceMatcher
 
 # Establecer conexión con base de datos
 __db_host__ = 'localhost'
@@ -24,9 +23,7 @@ __data_base__ = MySQLdb.connect(*__params__, charset='utf8', use_unicode=True)
 
 __cursor__ = __data_base__.cursor()
 
-def similar(palabra_a, palabra_b):
-    """Comparador de cadenas"""
-    return SequenceMatcher(None, palabra_a, palabra_b).ratio()
+
 
 def conexion_bd():
     """Consulta a base de datos semilla"""
@@ -55,7 +52,7 @@ def conexion_bd():
 
     # SQL query para obtener autores sin perfil de Scholar
     sql = "SELECT APELLIDO, NOMBRE, EMAIL, TITULO, CEDULA FROM autor_publicacion \
-    WHERE SCHOLAR_URL IS NULL"
+    WHERE SCHOLAR_URL IS NULL AND ANALIZADO IS NULL"
 
     #Ejecutar comando SQL
     __cursor__.execute(sql)
@@ -73,6 +70,13 @@ def conexion_bd():
         # Consultar posibles perfiles del autor en google scholar
         obtener_autores(autor['nombre'][0]+'+'+autor['apellido'][0], autor['cedula'], autor)
 
+        #Insertar en Base de Datos la url del perfil
+        __cursor__.execute('UPDATE autor_publicacion \
+        SET ANALIZADO=%d WHERE TITULO="%s"'\
+        % (1, autor['titulo']))
+
+        #Guardar cambios en la Base de Datos
+        __data_base__.commit()
     # Desconectar de la Base de Datos
     __data_base__.close()
 
@@ -227,7 +231,7 @@ def obtener_articulos(autor):
 
 def obtener_perfil():
     """Obtener el perfil del articulo que tenga mayor porcentaje de coincidencias"""
-
+    
     #abrir archivo temporal con el listado de artículos
     reader = csv.reader(open('articulosDat.csv', 'rb'))
     next(reader, None)
@@ -266,9 +270,9 @@ def obtener_perfil():
             print "SCHOLAR_URL: %s \n" % url_user
 
             #Insertar en Base de Datos la url del perfil
-            __cursor__.execute("UPDATE autor_publicacion \
-            SET SCHOLAR_URL='%s', COINCIDENCIA='%s' WHERE CEDULA='%s'"\
-            % (url_user, num_mayor, cedula_user))
+            __cursor__.execute("INSERT into perfil_google (CEDULA, SCHOLAR_ID, COINCIDENCIA, ESTADO)\
+            values ('%s', '%s', %d, %d)"\
+            % (cedula_user, url_user, int(num_mayor), 0))
 
             #Guardar cambios en la Base de Datos
             __data_base__.commit()
