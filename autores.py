@@ -8,6 +8,8 @@ import re
 import csv
 import os
 import os.path as path
+import datetime
+import codecs
 from bs4 import BeautifulSoup
 import requests
 import MySQLdb
@@ -51,7 +53,7 @@ def conexion_bd():
     csvsalida.close()
 
     # SQL query para obtener autores sin perfil de Scholar
-    sql = "SELECT APELLIDO, NOMBRE, EMAIL, TITULO, CEDULA FROM autor_publicacion \
+    sql = "SELECT APELLIDO, NOMBRE, EMAIL, TITULO, CEDULA, ID FROM autor_publicacion \
     WHERE SCHOLAR_URL IS NULL AND ANALIZADO IS NULL"
 
     #Ejecutar comando SQL
@@ -62,6 +64,7 @@ def conexion_bd():
     # Crear diccionario con datos del autor
     autor = {}
     for row in results:
+        autor['id'] = row[5]
         autor['nombre'] = row[1].split()
         autor['apellido'] = row[0].split()
         autor['email'] = row[2]
@@ -111,6 +114,21 @@ def obtener_autores(autor, cedula, dat_autor):
 
             # Pasamos el contenido HTML de la web a un objeto BeautifulSoup()
             html = BeautifulSoup(req.text)
+            # TODO: Almacenar en base
+
+            #Generar fecha y hora
+            fecha = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            #Codificar pagina scrapeada a utf-8
+            #Escapar comillas simples y dobles para html
+            html2 = codecs.decode(MySQLdb.escape_string(str(html)), 'utf-8')
+
+            #Insertar en Base de Datos la url del perfil
+            __cursor__.execute("INSERT into html (id_autor, html,\
+             fecha, url) values (%d, '%s', '%s', '%s')"\
+            % (dat_autor['id'], html2, fecha, url_base))
+
+            #Guardar cambios en la Base de Datos
+            __data_base__.commit()
 
             # Obtenemos todos los divs donde estan los perfiles
             entradas = html.find_all('div', {'class':'gsc_1usr gs_scl'})
@@ -231,7 +249,7 @@ def obtener_articulos(autor):
 
 def obtener_perfil():
     """Obtener el perfil del articulo que tenga mayor porcentaje de coincidencias"""
-    
+
     #abrir archivo temporal con el listado de artículos
     reader = csv.reader(open('articulosDat.csv', 'rb'))
     next(reader, None)
@@ -270,8 +288,8 @@ def obtener_perfil():
             print "SCHOLAR_URL: %s \n" % url_user
 
             #Insertar en Base de Datos la url del perfil
-            __cursor__.execute("INSERT into perfil_google (CEDULA, SCHOLAR_ID, COINCIDENCIA, ESTADO)\
-            values ('%s', '%s', %d, %d)"\
+            __cursor__.execute("INSERT into perfil_google (CEDULA, SCHOLAR_ID, COINCIDENCIA,\
+             ESTADO) values ('%s', '%s', %d, %d)"\
             % (cedula_user, url_user, int(num_mayor), 0))
 
             #Guardar cambios en la Base de Datos
