@@ -73,6 +73,7 @@ def conexion_bd():
         # Consultar posibles perfiles del autor en google scholar
         obtener_autores(autor['nombre'][0]+'+'+autor['apellido'][0], autor['cedula'], autor)
 
+
         #Insertar en Base de Datos la url del perfil
         __cursor__.execute('UPDATE autor_publicacion \
         SET ANALIZADO=%d WHERE TITULO="%s"'\
