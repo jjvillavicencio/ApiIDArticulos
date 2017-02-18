@@ -54,7 +54,7 @@ def conexion_bd():
 
     # SQL query para obtener autores sin perfil de Scholar
     sql = "SELECT APELLIDO, NOMBRE, EMAIL, TITULO, CEDULA, ID FROM autor_publicacion \
-    WHERE SCHOLAR_URL IS NULL AND ANALIZADO IS NULL"
+    WHERE ANALIZADO IS NOT NULL AND ANALIZADO_OFF IS NULL"
 
     #Ejecutar comando SQL
     __cursor__.execute(sql)
@@ -74,12 +74,12 @@ def conexion_bd():
         obtener_autores(autor['nombre'][0]+'+'+autor['apellido'][0], autor['cedula'], autor)
         autor['titulo'] = autor['titulo'].replace("'",'"')
         print ("UPDATE autor_publicacion \
-        SET ANALIZADO=%d WHERE TITULO='%s'"\
+        SET ANALIZADO_OFF=%d WHERE TITULO='%s'"\
         % (1, autor['titulo']))
 
         #Insertar en Base de Datos la url del perfil
         __cursor__.execute("UPDATE autor_publicacion \
-        SET ANALIZADO=%d WHERE TITULO='%s'"\
+        SET ANALIZADO_OFF=%d WHERE TITULO='%s'"\
         % (1, autor['titulo']))
 
         #Guardar cambios en la Base de Datos
@@ -90,104 +90,64 @@ def conexion_bd():
 def obtener_autores(autor, cedula, dat_autor):
     """Función obtener listado de coincidencia de autores"""
 
-    #Armar url para scrapear posibles perfiles
-    url_base_1 = 'https://scholar.google.es/citations?mauthors=autor%3A'
-    url_base_2 = '+&hl=es&view_op=search_authors'
-    url_base = url_base_1 + autor + url_base_2
 
-    print '==================================='
-    print u'Autor: %s \n' % autor
-    print u'Link scrapy: %s \n' % url_base
+    # SQL query para obtener autores sin perfil de Scholar
+    sql = ("SELECT id_html, id_autor, html, url FROM html \
+    WHERE id_autor = %d") % (dat_autor['id'])
 
-    #Contador de posibles perfiles
-    counter = 0
-    #Variable para almacenar posibles perfiles
-    lista = []
-    #Bandera para saber si hay mas de una página con resultados
-    pagina = True
+    #Ejecutar comando SQL
+    __cursor__.execute(sql)
+    # Convertir resultado a lista
+    results = __cursor__.fetchall()
 
-    #Scrapear mientras existan más páginas
-    while pagina:
-        #resetear variable con resultados
+    for row in results:
+        url_base = row[3]
+
+        print '==================================='
+        print u'Autor: %s \n' % autor
+        print u'Link scrapy: %s \n' % url_base
+
+        #Contador de posibles perfiles
+        counter = 0
+        #Variable para almacenar posibles perfiles
         lista = []
-        # Realizamos la petición a la web
-        req = requests.get(url_base)
-        # Comprobamos que la petición nos devuelve un Status Code = 200
-        status_code = req.status_code
-        if status_code == 200:
+        # Pasamos el contenido HTML de la web a un objeto BeautifulSoup()
+        html = BeautifulSoup(row[2])
+        # Obtenemos todos los divs donde estan los perfiles
+        entradas = html.find_all('div', {'class':'gsc_1usr gs_scl'})
+        # Obtenemos los div con el botón a siguiete página
+        # Recorremos todas las entradas para extraer el Nombre del perfil,
+        # el link, y sus atributos
+        for entrada in entradas:
+            counter += 1
+            #Armamos la URL de los posibles perfiles
+            id_user = entrada.find('div', {'class' : 'gsc_1usr_photo'})
+            id_user = id_user.find('a').get('href')
+            id_user = 'https://scholar.google.es' + id_user
 
-            # Pasamos el contenido HTML de la web a un objeto BeautifulSoup()
-            html = BeautifulSoup(req.text)
-            # TODO: Almacenar en base
+            #Extraemos el nombre de usuario
+            user_name = entrada.find('h3', {'class' : 'gsc_1usr_name'})
+            user_name = user_name.text
 
-            #Generar fecha y hora
-            fecha = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            #Codificar pagina scrapeada a utf-8
-            #Escapar comillas simples y dobles para html
-            html2 = codecs.decode(MySQLdb.escape_string(str(html)), 'utf-8')
+            #Extraemos los interéses del posible perfil
+            intereses = entrada.find_all('a', {'class' : 'gsc_co_int'})
+            atributo = ''
+            for interes in intereses:
+                coincidencias = re.search("(label:.*)", interes.get('href'))
+                if coincidencias:
+                    atributo = atributo + ' , ' + coincidencias.group(1)
 
-            #Insertar en Base de Datos la url del perfil
-            __cursor__.execute("INSERT into html (id_autor, html,\
-             fecha, url) values (%d, '%s', '%s', '%s')"\
-            % (dat_autor['id'], html2, fecha, url_base))
+            #Añadimos los posibles perfiles a una variable
+            lista.append((cedula, counter, ''+unicode(user_name).encode("utf-8")+'', \
+            ''+unicode(id_user).encode("utf-8")+'', atributo.encode('latin-1')))
 
-            #Guardar cambios en la Base de Datos
-            __data_base__.commit()
-
-            # Obtenemos todos los divs donde estan los perfiles
-            entradas = html.find_all('div', {'class':'gsc_1usr gs_scl'})
-            # Obtenemos los div con el botón a siguiete página
-            siguiente = html.find('div', {'id':'gsc_authors_bottom_pag'})
-
-            #Si el botón a pagina siguiente esta habilitado
-            if siguiente:
-                siguiente = siguiente.find('button', {'aria-label':'Siguiente'})
-                siguiente = siguiente.get('onclick')
-                if siguiente:
-                    #Obtenemos la URL de la siguiente página
-                    url_base = 'https://scholar.google.es'+u'{0}'.format(
-                        siguiente.replace('\\x3d', '=').replace('\\x26', '&').replace('\'', '')\
-                        .replace('window.location=', ''))
-
-                    print u"Página" + "siguiente: %s" % url_base
-                else:
-                    pagina = False
-            else:
-                print 'Pagína siguiente: no hay siguiente página'
-                pagina = False
-
-            # Recorremos todas las entradas para extraer el Nombre del perfil,
-            # el link, y sus atributos
-            for entrada in entradas:
-                counter += 1
-                #Armamos la URL de los posibles perfiles
-                id_user = entrada.find('div', {'class' : 'gsc_1usr_photo'})
-                id_user = id_user.find('a').get('href')
-                id_user = 'https://scholar.google.es' + id_user
-
-                #Extraemos el nombre de usuario
-                user_name = entrada.find('h3', {'class' : 'gsc_1usr_name'})
-                user_name = user_name.text
-
-                #Extraemos los interéses del posible perfil
-                intereses = entrada.find_all('a', {'class' : 'gsc_co_int'})
-                atributo = ''
-                for interes in intereses:
-                    coincidencias = re.search("(label:.*)", interes.get('href'))
-                    if coincidencias:
-                        atributo = atributo + ' , ' + coincidencias.group(1)
-
-                #Añadimos los posibles perfiles a una variable
-                lista.append((cedula, counter, ''+unicode(user_name).encode("utf-8")+'', \
-                ''+unicode(id_user).encode("utf-8")+'', atributo.encode('latin-1')))
-
-            #Abrimos archivo temporal para almacenar posibles perfiles
-            csvsalida = open('autoresdat.csv', 'a')
-            salida = csv.writer(csvsalida)
-            #Agregamos los posibles perfiles al archivo temporal
-            salida.writerows(lista)
-            del salida
-            csvsalida.close()
+        #Abrimos archivo temporal para almacenar posibles perfiles
+        csvsalida = open('autoresdat.csv', 'a')
+        salida = csv.writer(csvsalida)
+        #Agregamos los posibles perfiles al archivo temporal
+        salida.writerows(lista)
+        del salida
+        csvsalida.close()
 
     #Verificamos si hay posibles perfiles en el archivo temporal
     data_set = open('autoresdat.csv', 'r')
@@ -292,7 +252,7 @@ def obtener_perfil():
             print "SCHOLAR_URL: %s \n" % url_user
 
             #Insertar en Base de Datos la url del perfil
-            __cursor__.execute("INSERT into perfil_google (CEDULA, SCHOLAR_ID, COINCIDENCIA,\
+            __cursor__.execute("INSERT into perfil_google_off (CEDULA, SCHOLAR_ID, COINCIDENCIA,\
              ESTADO) values ('%s', '%s', %d, %d)"\
             % (cedula_user, url_user, int(num_mayor), 0))
 
