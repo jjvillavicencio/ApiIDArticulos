@@ -65,10 +65,6 @@ def conexion_bd():
         except AttributeError:
             continue
 
-        # print ("UPDATE AuthEcuador \
-        # SET authVerificado=%s WHERE authID='%s'"\
-        # % ("TRUE", autor['authId']))
-
         #Insertar en Base de Datos la url del perfil
         __cursor__.execute("UPDATE AuthEcuador \
         SET authVerificado='%s' WHERE authID='%s'"\
